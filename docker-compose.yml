@@ -1,0 +1,19 @@
+# docker-compose.yml
+version: '4.41'
+
+services:
+  db:
+    image: postgres:16-alpine # Using a lightweight PostgreSQL image
+    container_name: guardianai_db
+    environment:
+      POSTGRES_DB: guardianai_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password # Use a strong password in production!
+    ports:
+      - "5432:5432" # Map container port 5432 to host port 5432
+    volumes:
+      - db_data:/var/lib/postgresql/data # Persist data in a named volume
+    restart: unless-stopped # Keep the container running
+
+volumes:
+  db_data: # Define the named volume
