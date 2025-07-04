@@ -3,17 +3,48 @@ version: '4.41'
 
 services:
   db:
-    image: postgres:16-alpine # Using a lightweight PostgreSQL image
+    image: postgres:16-alpine
     container_name: guardianai_db
     environment:
       POSTGRES_DB: guardianai_db
       POSTGRES_USER: user
-      POSTGRES_PASSWORD: password # Use a strong password in production!
+      POSTGRES_PASSWORD: password
     ports:
-      - "5432:5432" # Map container port 5432 to host port 5432
+      - "5432:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data # Persist data in a named volume
-    restart: unless-stopped # Keep the container running
+      - db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0 # Using Confluent's Zookeeper image
+    container_name: zookeeper
+    ports:
+      - "2181:2181" # Default Zookeeper client port
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0 # Using Confluent's Kafka image
+    container_name: kafka
+    ports:
+      - "9092:9092" # Default Kafka broker port
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181 # Connects to the zookeeper service defined above
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092 # How clients connect
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1 # For development, use 1 replica
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1 # For development, use 1 replica
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1 # For development
+    volumes:
+      - kafka_data:/var/lib/kafka/data # Persist Kafka log data
+    depends_on: # Ensure Zookeeper starts before Kafka
+      - zookeeper
+    restart: unless-stopped
 
 volumes:
-  db_data: # Define the named volume
+  db_data:
+  kafka_data: # Define the new named volume for Kafka

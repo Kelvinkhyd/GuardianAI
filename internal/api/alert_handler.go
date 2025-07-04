@@ -11,6 +11,7 @@ import (
 
     "github.com/gorilla/mux"
 
+    "github.com/Kelvinkhyd/GuardianAI/internal/kafka" // Import kafka package
     "github.com/Kelvinkhyd/GuardianAI/internal/models"
     "github.com/Kelvinkhyd/GuardianAI/internal/repository" // Import repository
 )
@@ -18,14 +19,15 @@ import (
 // Handler holds dependencies for our API handlers.
 type Handler struct {
     AlertRepo repository.AlertRepository
+    KafkaProducer *kafka.Producer // Add Kafka producer
 }
 
 // NewHandler creates a new Handler instance.
-func NewHandler(ar repository.AlertRepository) *Handler {
-    return &Handler{AlertRepo: ar}
+func NewHandler(ar repository.AlertRepository, kp *kafka.Producer) *Handler {
+    return &Handler{AlertRepo: ar, KafkaProducer: kp}
 }
 
-// HandleAlerts receives incoming security alerts via HTTP POST and stores them.
+// HandleAlerts receives incoming security alerts via HTTP POST and stores them, then publishes to Kafka.
 func (h *Handler) HandleAlerts(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodPost {
         http.Error(w, "Only POST requests are accepted", http.StatusMethodNotAllowed)
@@ -40,14 +42,19 @@ func (h *Handler) HandleAlerts(w http.ResponseWriter, r *http.Request) {
     }
 
     if alert.ID == "" {
-        alert.ID = fmt.Sprintf("alert-%d", time.Now().UnixNano()) // Simple ID generation
+        alert.ID = fmt.Sprintf("alert-%d", time.Now().UnixNano())
     }
-    alert.Status = "new" // Initial status, will be processed by orchestration layer later
-    alert.Timestamp = time.Now() // Ensure timestamp is set if not provided or to current time
+    alert.Status = "new"
+    // It's good practice to ensure the timestamp is set if not provided or to current time.
+    // If the client provides a timestamp, use it. Otherwise, set it to now.
+    if alert.Timestamp.IsZero() {
+        alert.Timestamp = time.Now()
+    }
 
-    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second) // Set a timeout for DB operations
+    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
     defer cancel()
 
+    // 1. Save to Database
     err = h.AlertRepo.CreateAlert(ctx, &alert)
     if err != nil {
         log.Printf("ERROR: Failed to save alert to DB: %v", err)
@@ -55,13 +62,35 @@ func (h *Handler) HandleAlerts(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    log.Printf("Received and saved new alert: ID=%s, Source=%s, Category=%s, Severity=%s, Hostname=%s",
-        alert.ID, alert.Source, alert.Category, alert.Severity, alert.Hostname)
+    // 2. Publish to Kafka
+    alertJSON, err := json.Marshal(alert)
+    if err != nil {
+        log.Printf("ERROR: Failed to marshal alert for Kafka: %v", err)
+        // Still return 202 because DB save succeeded, but log the Kafka issue.
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusAccepted)
+        json.NewEncoder(w).Encode(map[string]string{"message": "Alert received and saved to DB, but failed to publish to Kafka", "alert_id": alert.ID})
+        return
+    }
+
+    // Use alert ID as key for Kafka message to ensure order for a specific alert (if partitions are by key)
+    err = h.KafkaProducer.PublishMessage(ctx, []byte(alert.ID), alertJSON)
+    if err != nil {
+        log.Printf("ERROR: Failed to publish alert %s to Kafka: %v", alert.ID, err)
+        // Similar to above, DB save succeeded, so return Accepted.
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusAccepted)
+        json.NewEncoder(w).Encode(map[string]string{"message": "Alert received and saved to DB, but failed to publish to Kafka", "alert_id": alert.ID})
+        return
+    }
+
+    log.Printf("Received, saved, and published alert to Kafka: ID=%s, Source=%s", alert.ID, alert.Source)
 
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(http.StatusAccepted)
-    json.NewEncoder(w).Encode(map[string]string{"message": "Alert received and saved", "alert_id": alert.ID})
+    json.NewEncoder(w).Encode(map[string]string{"message": "Alert received, saved, and published for processing", "alert_id": alert.ID})
 }
+
 
 // GetAlerts retrieves a list of security alerts from the database.
 // Supports pagination via query parameters: /alerts?limit=10&offset=0
