@@ -1,0 +1,6 @@
+# ai_service/requirements.txt
+fastapi==0.111.0
+uvicorn==0.30.1
+pydantic==2.8.2
+# For placeholder AI (optional, could add scikit-learn later)
+# scikit-learn==1.5.0

@@ -1,0 +1,31 @@
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+*.prof
+*.out
+*.log
+# Test binaries
+*-test
+*.test
+
+# VS Code
+.vscode/
+
+# IDEs
+.idea/
+
+# Docker
+.dockerignore
+# Local development data (from volumes)
+db_data/
+kafka_data/
+# Docker Compose environment variables
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

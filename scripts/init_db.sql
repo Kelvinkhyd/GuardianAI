@@ -15,3 +15,9 @@ CREATE TABLE IF NOT EXISTS alerts (
     status VARCHAR(50) NOT NULL DEFAULT 'new',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Add new columns for AI/ML integration (Run these if the table already exists)
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS predicted_severity VARCHAR(50);
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS risk_score NUMERIC(5,3); -- e.g., 0.000 to 1.000
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS recommended_action TEXT;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ai_model_version VARCHAR(100);
